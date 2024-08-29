@@ -72,7 +72,7 @@ async function getBuyerExpenses(buyerName, date) {
         const sumSpent= spentAcc+spentAgn
        
        
-        return { spentAgn, spentAcc,sumSpent };
+        return { spentAgn, spentAcc, sumSpent };
       } else {
         throw new Error(`Данные за дату ${date} не найдены.`);
       }
@@ -121,7 +121,7 @@ async function getBuyerExpensesTotal(buyerName) {
           const spentAcc = parseFloat(row[spentAccIndex]) || 0;
           acc.spentAgn += spentAgn;
           acc.spentAcc += spentAcc;
-          acc.sumSpent = spentAcc+spentAgn
+          acc.sumSpent += spentAcc+spentAgn
           return acc;
         },
         { spentAgn: 0, spentAcc: 0,sumSpent:0,}
@@ -313,6 +313,8 @@ const startServer = async () => {
       console.log('Connected to database...');
       const now = moment().tz('Europe/Moscow').format('YYYY-MM-DD HH:mm:ss');
       console.log(now)
+      const sum = await getBuyerExpensesTotal('Vova')
+      console.log(sum)
       app.listen(PORT, () => {
           console.log(`Server is running on port ${PORT}`);
       });
