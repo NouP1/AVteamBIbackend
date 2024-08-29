@@ -1,0 +1,6 @@
+.env
+node_modules/
+package-lock.json
+package.json
+CRMbuyers.db
+core-crowbar-433011-c1-79f7407b3e99.json
