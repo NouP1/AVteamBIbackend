@@ -32,6 +32,10 @@ const RevenueRecord = sequelize.define('revenue_records', {
   profit: {
     type: DataTypes.FLOAT,
     defaultValue: 0,
+  },
+  firstdeps: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0, // По умолчанию 0, так как может быть отсутствие выплат
   }
 });
 
