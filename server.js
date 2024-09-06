@@ -326,65 +326,83 @@ app.get('/api/buyer/:username/records', async (req, res) => {
     if (buyer) {
       console.log(`С учетной записи байера пришел запрос с диапазоном дат ${startDate} - ${endDate}`);
 
-      // Формируем условие фильтрации по дате
       const filter = { buyerId: buyer.id };
       if (startDate && endDate) {
-        // Преобразуем даты в начало и конец дня
         const start = dayjs(startDate).startOf('day').toDate();
         const end = dayjs(endDate).endOf('day').toDate();
         filter.date = { [Op.between]: [start, end] };
       }
 
-      // Получаем записи с учетом фильтрации по дате
-      const records = await RevenueRecord.findAll({ where: filter });
-      if (records.length === 0) {
-        return res.json({ message: 'Нет данных за выбранный период', records: [] });
+      // Получаем записи о доходах за указанный период
+      const revenueRecords = await RevenueRecord.findAll({ where: filter });
+
+      // Получаем все даты за указанный диапазон
+      const dates = [];
+      let currentDate = dayjs(startDate);
+      const end = dayjs(endDate);
+      while (currentDate.isBefore(end) || currentDate.isSame(end, 'day')) {
+        dates.push(currentDate.format('YYYY-MM-DD'));
+        currentDate = currentDate.add(1, 'day');
       }
+
       // Инициализируем переменные для суммирования
       let totalIncome = 0;
       let totalExpensesAgn = 0;
       let totalExpensesAcc = 0;
       let totalProfit = 0;
-      let totalRecordsCount = records.length;
-   
+      let totalRecordsCount = 0;
 
-      // Обрабатываем записи и вычисляем агрегированные значения
-      const recordsWithExpenses = await Promise.all(records.map(async record => {
-        const expenses = await getBuyerExpenses(username, record.date);
-        const validExpenses = expenses.sumSpent || 0;
+      // Обрабатываем каждый день из диапазона
+      const recordsWithExpenses = await Promise.all(dates.map(async (date) => {
+        // Проверяем, есть ли запись о доходе за этот день
+        const revenueRecord = revenueRecords.find(record => dayjs(record.date).format('YYYY-MM-DD') === date);
 
+        // Получаем расходы за этот день
+        const expenses = await getBuyerExpenses(username, date);
+        const validExpenses = expenses?.sumSpent || 0;
+
+        // Если записи о доходе нет, считаем доход = 0
+        const income = revenueRecord ? revenueRecord.income : 0;
+
+        // Рассчитываем прибыль
+        const profit = income - validExpenses;
+
+        // Рассчитываем ROI
         let Roi = 0;
         if (validExpenses !== 0) {
-          Roi = Math.round((record.income - validExpenses) / validExpenses * 100);
-          Roi = Number.isFinite(Roi) ? Roi : 0;  // Проверка на NaN и Infinity
+          Roi = Math.round((income - validExpenses) / validExpenses * 100);
+          Roi = Number.isFinite(Roi) ? Roi : 0;
         }
 
-        const profit = record.income - validExpenses;
-
         // Обновляем общие суммы
-        totalIncome += record.income;
-        totalExpensesAgn += expenses.spentAgn;
-        totalExpensesAcc += expenses.spentAcc;
-       totalProfit += profit;
+        totalIncome += income;
+        totalExpensesAgn += expenses.spentAgn || 0;
+        totalExpensesAcc += expenses.spentAcc || 0;
+        totalProfit += profit;
+
+        // Обновляем количество записей
+        totalRecordsCount++;
 
         const formatCurrency = (value) => {
           return value < 0 ? `-$${Math.abs(value)}` : `$${value}`;
         };
 
         return {
-          ...record.toJSON(),
-          expensesAcc: expenses.spentAcc,
-          expensesAgn: expenses.spentAgn,
+          date,
+          income: formatCurrency(income),
+          expensesAgn: expenses.spentAgn || 0,
+          expensesAcc: expenses.spentAcc || 0,
           profit: formatCurrency(profit) || 0,
           Roi: Roi
         };
       }));
 
       let totalRoi = 0;
-      if ((totalExpensesAgn+totalExpensesAcc) !== 0) {
-        totalRoi = Math.round((totalIncome - (totalExpensesAgn+totalExpensesAcc)) / (totalExpensesAcc+totalExpensesAgn) * 100);
-        totalRoi = Number.isFinite(totalRoi) ? totalRoi : 0;  // Проверка на NaN и Infinity
+      if ((totalExpensesAgn + totalExpensesAcc) !== 0) {
+        totalRoi = Math.round((totalIncome - (totalExpensesAgn + totalExpensesAcc)) / (totalExpensesAcc + totalExpensesAgn) * 100);
+        totalRoi = Number.isFinite(totalRoi) ? totalRoi : 0;
       }
+
       // Возвращаем записи и агрегированные данные
       res.json({
         records: recordsWithExpenses,
