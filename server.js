@@ -337,7 +337,9 @@ app.get('/api/buyer/:username/records', async (req, res) => {
 
       // Получаем записи с учетом фильтрации по дате
       const records = await RevenueRecord.findAll({ where: filter });
-
+      if (records.length === 0) {
+        return res.json({ message: 'Нет данных за выбранный период', records: [] });
+      }
       // Инициализируем переменные для суммирования
       let totalIncome = 0;
       let totalExpensesAgn = 0;

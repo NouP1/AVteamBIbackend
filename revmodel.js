@@ -37,7 +37,11 @@ const RevenueRecord = sequelize.define('revenue_records', {
     type: DataTypes.INTEGER,
     defaultValue: 0, // По умолчанию 0, так как может быть отсутствие выплат
   }
-});
+},
+  {
+    timestamps: false  // Отключаем временные метки
+  });
+
 
 // Устанавливаем связь между моделями
 BuyerModel.hasMany(RevenueRecord, { foreignKey: 'buyerId' });
