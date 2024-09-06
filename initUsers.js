@@ -20,7 +20,7 @@ const buyer5 = process.env.B5;
       { username: 'buyer2', password: buyer2, role: 'buyer', name: 'Anton' },
       { username: 'buyer3', password: buyer3, role: 'buyer', name: 'Vova' },
       { username: 'id4', password: buyer4, role: 'buyer', name: 'Pasha' },
-      { username: 'buyer5', password: buyer5, role: 'buyer', name: 'Iliya' },
+      { username: 'id5', password: buyer5, role: 'buyer', name: 'Iliya' },
     ]);
 
     console.log('Пользователи успешно созданы.');
