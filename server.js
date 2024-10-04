@@ -26,7 +26,7 @@ require('dotenv').config();
 const app = express();
 const PORT = 3100;
 
-const apiKey = process.env.GAPI;
+const apiKey = process.env.GAPI; 
 const spreadsheetId = process.env.SPREADSHEETID;
 
 
@@ -59,7 +59,7 @@ initUsers();
       // Получаем данные из текущего листа
       const response = await sheetsApi.spreadsheets.values.get({
         spreadsheetId: spreadsheetId,
-        range: `${sheetName}!A1:K`,  // Обращаемся к диапазону текущего листа
+        range: `${sheetName}!A1:M`,  // Обращаемся к диапазону текущего листа
       });
 
       const rows = response.data.values;
@@ -122,7 +122,7 @@ async function getBuyerExpensesTotal(buyerName, startDate, endDate) {
       // Получаем данные из текущего листа
       const response = await sheetsApi.spreadsheets.values.get({
         spreadsheetId: spreadsheetId,
-        range: `${sheetName}!A1:K`,  // Обращаемся к диапазону текущего листа
+        range: `${sheetName}!A1:M`,  // Обращаемся к диапазону текущего листа
       });
 
       const rows = response.data.values;
