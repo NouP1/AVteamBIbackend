@@ -22,8 +22,13 @@ const BuyerModel = sequelize.define(
     countFirstdeps: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-    }
-  },
+    },
+    reject: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+  }
+},
+
   {
       timestamps: false  // Отключаем временные метки
     });

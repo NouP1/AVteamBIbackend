@@ -221,7 +221,7 @@ app.get('/api/admin/buyers', async (req, res) => {
         });
 
         // Подсчитываем общий доход и Firstdeps за указанный период
-        const totalIncome = revenueRecords.reduce((sum, record) => sum + record.income, 0);
+        const totalIncome = revenueRecords.reduce((sum, record) => sum + record.income, 0) - buyer.reject;
         
         const totalFirstdeps = revenueRecords.reduce((sum, record) => sum + record.firstdeps, 0);
   
@@ -249,7 +249,8 @@ app.get('/api/admin/buyers', async (req, res) => {
           expensesAgn: expenses.spentAgn,
           expensesAcc: expenses.spentAcc,
           profit: formatCurrency(profit),
-          Roi: Roi
+          Roi: Roi,
+          reject:buyer.reject
         };
       }));
 
@@ -263,7 +264,29 @@ app.get('/api/admin/buyers', async (req, res) => {
   }
 });
 
+app.put('/api/buyers/:id', async (req, res) => {
+  try {
+    const buyerId = req.params.id;
+    const { reject } = req.body;
 
+    const buyer = await BuyerModel.findByPk(buyerId);
+    if (!buyer) {
+      return res.status(404).json({ error: 'Байер не найден' });
+    }
+
+    if (reject !== undefined) {
+      buyer.reject = reject;
+    } else {
+      return res.status(400).json({ error: 'Некорректное значение для reject' });
+    }
+
+    await buyer.save();
+    res.json(buyer);
+  } catch (error) {
+    console.error('Ошибка при сохранении байера:', error);
+    res.status(500).json({ error: 'Произошла ошибка при сохранении байера' });
+  }
+});
 
 app.post('/api/webhook/postback', async (req, res) => {
   try {
@@ -333,10 +356,10 @@ app.get('/api/buyer/:username/records', async (req, res) => {
         filter.date = { [Op.between]: [start, end] };
       }
 
-      // Получаем записи о доходах за указанный период
+     
       const revenueRecords = await RevenueRecord.findAll({ where: filter });
 
-      // Получаем все даты за указанный диапазон
+    
       const dates = [];
       let currentDate = dayjs(startDate);
       const end = dayjs(endDate);
@@ -345,36 +368,32 @@ app.get('/api/buyer/:username/records', async (req, res) => {
         currentDate = currentDate.add(1, 'day');
       }
 
-      // Инициализируем переменные для суммирования
+     
       let totalIncome = 0;
       let totalExpensesAgn = 0;
       let totalExpensesAcc = 0;
       let totalProfit = 0;
       let totalRecordsCount = 0;
 
-      // Обрабатываем каждый день из диапазона
       const recordsWithExpenses = await Promise.all(dates.map(async (date) => {
-        // Проверяем, есть ли запись о доходе за этот день
+   
         const revenueRecord = revenueRecords.find(record => dayjs(record.date).format('YYYY-MM-DD') === date);
-
-        // Получаем расходы за этот день
         const expenses = await getBuyerExpenses(username, date);
         const validExpenses = expenses?.sumSpent || 0;
 
-        // Если записи о доходе нет, считаем доход = 0
+   
         const income = revenueRecord ? revenueRecord.income : 0;
 
-        // Рассчитываем прибыль
+
         const profit = income - validExpenses;
 
-        // Рассчитываем ROI
+ 
         let Roi = 0;
         if (validExpenses !== 0) {
           Roi = Math.round((income - validExpenses) / validExpenses * 100);
           Roi = Number.isFinite(Roi) ? Roi : 0;
         }
 
-        // Обновляем общие суммы
         totalIncome += income;
         totalExpensesAgn += expenses.spentAgn || 0;
         totalExpensesAcc += expenses.spentAcc || 0;
@@ -394,9 +413,12 @@ app.get('/api/buyer/:username/records', async (req, res) => {
           expensesAcc: expenses.spentAcc || 0,
           profit: formatCurrency(profit) || 0,
           Roi: Roi
+         
         };
       }));
 
+     totalIncome = totalIncome - buyer.reject;
+      totalProfit = totalProfit - buyer.reject;
       let totalRoi = 0;
       if ((totalExpensesAgn + totalExpensesAcc) !== 0) {
         totalRoi = Math.round((totalIncome - (totalExpensesAgn + totalExpensesAcc)) / (totalExpensesAcc + totalExpensesAgn) * 100);
@@ -411,7 +433,8 @@ app.get('/api/buyer/:username/records', async (req, res) => {
         totalExpensesAcc: totalExpensesAcc,
         totalProfit: totalProfit,
         totalRoi: totalRoi,
-        totalRecordsCount: totalRecordsCount
+        totalRecordsCount: totalRecordsCount,
+        reject: buyer.reject
       });
     } else {
       res.status(404).json({ message: 'Байер не найден' });
