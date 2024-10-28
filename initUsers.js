@@ -11,7 +11,7 @@ const buyer3 = process.env.B3;
 const buyer4 = process.env.B4;
 const buyer5 = process.env.B5;
 const buyer6 = process.env.B6;
-const buyer7 = process.env.B6;
+const buyer7 = process.env.B7;
     // Сброс таблицы (удаление всех записей)
     await UserModel.sync({ force: true });
 
