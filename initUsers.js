@@ -11,6 +11,7 @@ const buyer3 = process.env.B3;
 const buyer4 = process.env.B4;
 const buyer5 = process.env.B5;
 const buyer6 = process.env.B6;
+const buyer7 = process.env.B6;
     // Сброс таблицы (удаление всех записей)
     await UserModel.sync({ force: true });
 
@@ -22,6 +23,7 @@ const buyer6 = process.env.B6;
       { username: 'id4', password: buyer4, role: 'buyer', name: 'Pasha' },
       { username: 'id5', password: buyer5, role: 'buyer', name: 'Iliya' },
       { username: 'id6', password: buyer6, role: 'buyer', name: 'Stas' },
+      { username: 'id7', password: buyer7, role: 'buyer', name: 'Rustam' },
       
     ]);
 
