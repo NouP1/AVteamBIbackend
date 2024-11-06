@@ -15,7 +15,7 @@ const { auth } = require('google-auth-library');
 const serviceAccount = require('./core-crowbar-433011-c1-79f7407b3e99.json');
 const { Console } = require('console');
 const { Op } = require('sequelize');
-const isBetween = require ('dayjs/plugin/isBetween');
+const isBetween = require('dayjs/plugin/isBetween');
 
 dayjs.extend(isBetween);
 
@@ -26,7 +26,7 @@ require('dotenv').config();
 const app = express();
 const PORT = 3100;
 
-const apiKey = process.env.GAPI; 
+const apiKey = process.env.GAPI;
 const spreadsheetId = process.env.SPREADSHEETID;
 
 
@@ -34,143 +34,155 @@ app.use(cors());
 app.use(bodyParser.json());
 
 initUsers();
- //Расходы по датам
- async function getBuyerExpenses(buyerName, date) {
-  try { 
-    const authClient = auth.fromJSON(serviceAccount);
-    authClient.scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
-    await authClient.authorize();
 
-    const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
 
-    // Получаем список всех листов в таблице
-    const sheetsMetadata = await sheetsApi.spreadsheets.get({
-      spreadsheetId: spreadsheetId,
-    });
 
-    const sheets = sheetsMetadata.data.sheets;
-    if (!sheets || sheets.length === 0) {
-      throw new Error('Не удалось найти листы в таблице.');
+const sheetCache = new Map();
+const CACHE_EXPIRATION_TIME = 30 * 60 * 1000; // Время жизни кэша, 5 минут
+let cachedAuthClient = null;
+let cachedSheetsMetadata = null;
+let authTimestamp = null;
+
+// Функция для получения авторизованного клиента Google API
+async function getAuthClient() {
+  const now = Date.now();
+  
+  // Проверка кэша авторизованного клиента
+  if (cachedAuthClient && now - authTimestamp < CACHE_EXPIRATION_TIME) {
+    return cachedAuthClient;
+  }
+
+  const authClient = auth.fromJSON(serviceAccount);
+  authClient.scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+  await authClient.authorize();
+  
+  cachedAuthClient = authClient;
+  authTimestamp = now; // Сохраняем время последнего обновления
+
+  return authClient;
+}
+
+// Получение метаданных таблицы
+async function getSheetsMetadata() {
+  const now = Date.now();
+  
+  // Проверка кэша метаданных таблицы
+  if (cachedSheetsMetadata && now - authTimestamp < CACHE_EXPIRATION_TIME) {
+    return cachedSheetsMetadata;
+  }
+
+  const authClient = await getAuthClient();
+  const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
+  const sheetsMetadata = await sheetsApi.spreadsheets.get({ spreadsheetId });
+  
+  cachedSheetsMetadata = sheetsMetadata.data.sheets; // Кэшируем метаданные
+  return cachedSheetsMetadata;
+}
+
+// Получение кэшированных данных по одному листу
+async function getCachedSheetData(sheetName) {
+  const now = Date.now();
+
+  // Проверка наличия и актуальности кэша
+  if (sheetCache.has(sheetName)) {
+    const cachedData = sheetCache.get(sheetName);
+    if (now - cachedData.timestamp < CACHE_EXPIRATION_TIME) {
+      return cachedData.data;
     }
+  }
 
-    for (const sheet of sheets) {
-      const sheetName = sheet.properties.title;
+  // Обращение к Google Sheets API и обновление кэша
+  const authClient = await getAuthClient();
+  const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
+  const response = await sheetsApi.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A1:W`,
+  });
 
-      // Получаем данные из текущего листа
-      const response = await sheetsApi.spreadsheets.values.get({
-        spreadsheetId: spreadsheetId,
-        range: `${sheetName}!A1:W`,  // Обращаемся к диапазону текущего листа
-      });
+  const rows = response.data.values;
+  sheetCache.set(sheetName, { data: rows, timestamp: now });
+  return rows;
+}
 
-      const rows = response.data.values;
+// Получение данных по всем листам параллельно
+async function getAllSheetsData() {
+  const sheets = await getSheetsMetadata();
 
-      if (rows && rows.length > 0) {
-        const headers = rows[0];
-        const buyerIndex = headers.indexOf(buyerName);
-        if (buyerIndex === -1) {
-          continue;  // Продолжаем поиск на следующем листе, если байер не найден
-        }
+  const allSheetData = {};
+  const promises = sheets.map(async (sheet) => {
+    const sheetName = sheet.properties.title;
+    const data = await getCachedSheetData(sheetName);
+    allSheetData[sheetName] = data;
+  });
 
-        const spentAgnIndex = buyerIndex; 
-        const spentAccIndex = buyerIndex + 1; 
+  await Promise.all(promises);
+  return allSheetData;
+}
 
-        // Ищем строку с указанной датой
-        const matchingRow = rows.find(row => row[0] === date);
-        
-        if (matchingRow) {
-          const spentAgn = parseFloat(matchingRow[spentAgnIndex]) || 0;
-          const spentAcc = parseFloat(matchingRow[spentAccIndex]) || 0;
-          const sumSpent = spentAcc + spentAgn;
+// Получение данных расходов для конкретного байера на заданную дату
+async function getBuyerExpenses(buyerName, date) {
+  try {
 
-          return { spentAgn, spentAcc, sumSpent, sheetName };
-        }
+    const allSheetData = await getAllSheetsData();
+    for (const [sheetName, rows] of Object.entries(allSheetData)) {
+      const headers = rows[0];
+      const buyerIndex = headers.indexOf(buyerName);
+      if (buyerIndex === -1) continue;
+
+      const spentAgnIndex = buyerIndex;
+      const spentAccIndex = buyerIndex + 1;
+      const matchingRow = rows.find(row => row[0] === date);
+
+      if (matchingRow) {
+        const spentAgn = parseFloat(matchingRow[spentAgnIndex]) || 0;
+        const spentAcc = parseFloat(matchingRow[spentAccIndex]) || 0;
+        const sumSpent = spentAcc + spentAgn;
+        return { spentAgn, spentAcc, sumSpent, sheetName };
       }
     }
-
-    // Если ничего не найдено ни в одном листе
     throw new Error(`Данные за дату ${date} не найдены на любом листе.`);
-
   } catch (error) {
-    console.error('Error getting sheet data:', error);
-    throw error;  // Перебрасываем ошибку для обработки на более высоком уровне
+    console.error('Ошибка при получении данных по байеру:', error);
+    throw error;
   }
 }
-//Суммы расходов байеров
+
+// Получение общих данных расходов для конкретного байера за период
 async function getBuyerExpensesTotal(buyerName, startDate, endDate) {
   try {
-    const authClient = auth.fromJSON(serviceAccount);
-    authClient.scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
-    await authClient.authorize();
-
-    const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
-
-    // Получаем список всех листов в таблице
-    const sheetsMetadata = await sheetsApi.spreadsheets.get({
-      spreadsheetId: spreadsheetId,
-    });
-
-    const sheets = sheetsMetadata.data.sheets;
-    if (!sheets || sheets.length === 0) {
-      throw new Error('Не удалось найти листы в таблице.');
-    }
-
+    const allSheetData = await getAllSheetsData();
     let totalExpenses = { spentAgn: 0, spentAcc: 0, sumSpent: 0 };
 
-    for (const sheet of sheets) {
-      const sheetName = sheet.properties.title;
+    for (const rows of Object.values(allSheetData)) {
+      const headers = rows[0];
+      const buyerIndex = headers.indexOf(buyerName);
+      if (buyerIndex === -1) continue;
 
-      // Получаем данные из текущего листа
-      const response = await sheetsApi.spreadsheets.values.get({
-        spreadsheetId: spreadsheetId,
-        range: `${sheetName}!A1:W`,  // Обращаемся к диапазону текущего листа
-      });
-
-      const rows = response.data.values;
-   
-
-      if (rows && rows.length > 0) {
-        const headers = rows[0]; // Первый ряд содержит имена байеров
-        const buyerIndex = headers.indexOf(buyerName);
-
-        if (buyerIndex === -1) {
-          continue;  // Продолжаем поиск на следующем листе, если байер не найден
+      const spentAgnIndex = buyerIndex;
+      const spentAccIndex = buyerIndex + 1;
+      const sheetExpenses = rows.slice(3).reduce((acc, row) => {
+        const date = row[0];
+        if (date && dayjs(date).isBetween(startDate, endDate, null, '[]')) {
+          const spentAgn = parseFloat(row[spentAgnIndex]) || 0;
+          const spentAcc = parseFloat(row[spentAccIndex]) || 0;
+          acc.spentAgn += spentAgn;
+          acc.spentAcc += spentAcc;
+          acc.sumSpent += spentAgn + spentAcc;
         }
+        return acc;
+      }, { spentAgn: 0, spentAcc: 0, sumSpent: 0 });
 
-        const spentAgnIndex = buyerIndex; 
-        const spentAccIndex = buyerIndex + 1; 
-
-        // Начинаем с четвертой строки, где начинаются данные
-        const sheetExpenses = rows.slice(3).reduce((acc, row) => {
-          const date = row[0]; // Предполагается, что дата в первом столбце
-
-          // Проверка, что дата находится в заданном диапазоне
-          if (date && dayjs(date).isBetween(startDate, endDate, null, '[]')) {
-            const spentAgn = parseFloat(row[spentAgnIndex]) || 0;
-            const spentAcc = parseFloat(row[spentAccIndex]) || 0;
-            acc.spentAgn += spentAgn;
-            acc.spentAcc += spentAcc;
-            acc.sumSpent += spentAgn + spentAcc;
-          }
-
-          return acc;
-        }, { spentAgn: 0, spentAcc: 0, sumSpent: 0 });
-
-        // Добавляем расходы с текущего листа к общим расходам
-        totalExpenses.spentAgn += sheetExpenses.spentAgn;
-        totalExpenses.spentAcc += sheetExpenses.spentAcc;
-        totalExpenses.sumSpent += sheetExpenses.sumSpent;
-      }
+      totalExpenses.spentAgn += sheetExpenses.spentAgn;
+      totalExpenses.spentAcc += sheetExpenses.spentAcc;
+      totalExpenses.sumSpent += sheetExpenses.sumSpent;
     }
 
     return totalExpenses;
   } catch (error) {
-    console.error('Ошибка при получении данных из таблицы:', error);
+    console.error('Ошибка при получении общих данных по расходам байера:', error);
     return { spentAgn: 0, spentAcc: 0, sumSpent: 0 };
   }
 }
-
-   
-
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
@@ -178,7 +190,7 @@ app.post('/api/login', async (req, res) => {
 
   try {
     const user = await UserModel.findOne({ where: { username, password } });
-    
+
     if (user) {
       res.json({ success: true, user });
     } else {
@@ -222,9 +234,9 @@ app.get('/api/admin/buyers', async (req, res) => {
 
         // Подсчитываем общий доход и Firstdeps за указанный период
         const totalIncome = revenueRecords.reduce((sum, record) => sum + record.income, 0) - buyer.reject;
-        
+
         const totalFirstdeps = revenueRecords.reduce((sum, record) => sum + record.firstdeps, 0);
-  
+
 
         // Получаем общие расходы за указанный период
         const expenses = await getBuyerExpensesTotal(buyer.nameBuyer, startDate, endDate);
@@ -250,7 +262,7 @@ app.get('/api/admin/buyers', async (req, res) => {
           expensesAcc: expenses.spentAcc,
           profit: formatCurrency(profit),
           Roi: Roi,
-          reject:buyer.reject
+          reject: buyer.reject
         };
       }));
 
@@ -290,46 +302,46 @@ app.put('/api/buyers/:id', async (req, res) => {
 
 app.post('/api/webhook/postback', async (req, res) => {
   try {
-    const postData = req.body;  
+    const postData = req.body;
     console.log('Новые данные для CRM:', postData);
-    
+
     const offerParts = postData.campaign_name.split('|');
     const responsiblePerson = offerParts[offerParts.length - 1].trim();
     postData.payout = Math.floor(parseFloat(postData.payout));
 
     const [buyer, created] = await BuyerModel.findOrCreate({
       where: { nameBuyer: responsiblePerson },
-      defaults: { nameBuyer: responsiblePerson, countRevenue: postData.payout, countFirstdeps:1}
-  });
-  
+      defaults: { nameBuyer: responsiblePerson, countRevenue: postData.payout, countFirstdeps: 1 }
+    });
+
 
     if (!created) {
-        buyer.countRevenue += postData.payout;
-        buyer.countFirstdeps += 1;
-        await buyer.save();
+      buyer.countRevenue += postData.payout;
+      buyer.countFirstdeps += 1;
+      await buyer.save();
     }
     const currentDate = moment().tz('Europe/Moscow').format('YYYY-MM-DD');
     const existingRecord = await RevenueRecord.findOne({
       where: { buyerId: buyer.id, date: currentDate }
     });
     if (existingRecord) {
-     
+
       existingRecord.income += postData.payout;
       existingRecord.profit += postData.payout;
       existingRecord.firstdeps += 1;
-      
+
       await existingRecord.save();
     } else {
-   
-    await RevenueRecord.create({
-      buyerId: buyer.id,
-      date: currentDate,
-      income: postData.payout,
-      expenses: 0, 
-      profit: postData.payout,
-      firstdeps:1,
-    });
-  }
+
+      await RevenueRecord.create({
+        buyerId: buyer.id,
+        date: currentDate,
+        income: postData.payout,
+        expenses: 0,
+        profit: postData.payout,
+        firstdeps: 1,
+      });
+    }
     res.status(200).send('Postback data received');
   } catch (error) {
     console.error('Ошибка обработки postback:', error);
@@ -356,10 +368,10 @@ app.get('/api/buyer/:username/records', async (req, res) => {
         filter.date = { [Op.between]: [start, end] };
       }
 
-     
+
       const revenueRecords = await RevenueRecord.findAll({ where: filter });
 
-    
+
       const dates = [];
       let currentDate = dayjs(startDate);
       const end = dayjs(endDate);
@@ -368,7 +380,7 @@ app.get('/api/buyer/:username/records', async (req, res) => {
         currentDate = currentDate.add(1, 'day');
       }
 
-     
+
       let totalIncome = 0;
       let totalExpensesAgn = 0;
       let totalExpensesAcc = 0;
@@ -376,18 +388,18 @@ app.get('/api/buyer/:username/records', async (req, res) => {
       let totalRecordsCount = 0;
 
       const recordsWithExpenses = await Promise.all(dates.map(async (date) => {
-   
+
         const revenueRecord = revenueRecords.find(record => dayjs(record.date).format('YYYY-MM-DD') === date);
         const expenses = await getBuyerExpenses(username, date);
         const validExpenses = expenses?.sumSpent || 0;
 
-   
+
         const income = revenueRecord ? revenueRecord.income : 0;
 
 
         const profit = income - validExpenses;
 
- 
+
         let Roi = 0;
         if (validExpenses !== 0) {
           Roi = Math.round((income - validExpenses) / validExpenses * 100);
@@ -413,11 +425,11 @@ app.get('/api/buyer/:username/records', async (req, res) => {
           expensesAcc: expenses.spentAcc || 0,
           profit: formatCurrency(profit) || 0,
           Roi: Roi
-         
+
         };
       }));
 
-     totalIncome = totalIncome - buyer.reject;
+      totalIncome = totalIncome - buyer.reject;
       totalProfit = totalProfit - buyer.reject;
       let totalRoi = 0;
       if ((totalExpensesAgn + totalExpensesAcc) !== 0) {
@@ -448,17 +460,17 @@ app.get('/api/buyer/:username/records', async (req, res) => {
 
 const startServer = async () => {
   try {
-      await sequelize.authenticate();
-      await sequelize.sync();
-      
-      console.log('Connected to database...');
-      const now = moment().tz('Europe/Moscow').format('YYYY-MM-DD HH:mm:ss');
-      console.log(now)
-      app.listen(PORT, () => {
-          console.log(`Server is running on port ${PORT}`);
-      });
+    await sequelize.authenticate();
+    await sequelize.sync();
+
+    console.log('Connected to database...');
+    const now = moment().tz('Europe/Moscow').format('YYYY-MM-DD HH:mm:ss');
+    console.log(now)
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
   } catch (error) {
-      console.error('Отсутствует подключение к БД', error);
+    console.error('Отсутствует подключение к БД', error);
   }
 };
 
