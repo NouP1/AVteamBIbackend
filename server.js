@@ -350,10 +350,10 @@ app.post('/api/webhook/postback', async (req, res) => {
 });
 
 
-app.get('/api/reload', (req, res) => {
-  // Логика проверки, нужно ли перезагружать клиент
-  res.json({ reload: true });
-});
+// app.get('/api/reload', (req, res) => {
+//   // Логика проверки, нужно ли перезагружать клиент
+//   res.json({ reload: true });
+// });
 
 const checkUserAccess = (req, res, next) => {
   const userId = req.params.userId;
