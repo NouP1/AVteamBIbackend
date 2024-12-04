@@ -350,8 +350,17 @@ app.post('/api/webhook/postback', async (req, res) => {
 });
 
 
+const checkUserAccess = (req, res, next) => {
+  const userId = req.params.userId;
+  // console.log(userId) // Проверяем ID пользователя
+  if (userId=== "id6" || !userId) {
+    console.log(userId)
+    return res.status(403).json({ message: 'Access denied' });
+  }
+  next(); // Если доступ разрешен, переходим к следующему обработчику
+};
 
-app.get('/api/buyer/:username/records', async (req, res) => {
+app.get('/api/buyer/:username/records', checkUserAccess, async (req, res) => {
   try {
     const { username } = req.params;
     const { startDate, endDate } = req.query;
