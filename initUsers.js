@@ -22,7 +22,7 @@ const buyer7 = process.env.B7;
       { username: 'buyer2', password: buyer2, role: 'buyer', name: 'Anton' },
       { username: 'id4', password: buyer4, role: 'buyer', name: 'Pasha' },
       { username: 'id5', password: buyer5, role: 'buyer', name: 'Iliya' },
-      //  { username: 'id6', password: buyer6, role: 'buyer', name: 'Stas' },
+      // { username: 'id6', password: buyer6, role: 'buyer', name: 'Stas' },
       { username: 'id7', password: buyer7, role: 'buyer', name: 'Rustam' },
       
     ]);

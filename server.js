@@ -350,11 +350,16 @@ app.post('/api/webhook/postback', async (req, res) => {
 });
 
 
+app.get('/api/reload', (req, res) => {
+  // Логика проверки, нужно ли перезагружать клиент
+  res.json({ reload: true });
+});
+
 const checkUserAccess = (req, res, next) => {
   const userId = req.params.userId;
   // console.log(userId) // Проверяем ID пользователя
   if (userId=== "id6" || !userId) {
-    console.log(userId)
+    // console.log(userId)
     return res.status(403).json({ message: 'Access denied' });
   }
   next(); // Если доступ разрешен, переходим к следующему обработчику
